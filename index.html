@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Neural Network Visual</title>
+        <style>
+            body {
+                background-color: #1a1a1a;
+                color: rgba(251, 248, 218, 0.37);
+            }
+            canvas {
+                border: #484747 5px solid;
+            }
+            #container {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }
+        </style>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/10.0.0/math.min.js"></script>
+    </head>
+    
+    <body>
+        <div id="container">
+            <canvas id="canv" width="1050px" height="550px"></canvas>
+        </div>
+        <script>
+            class NN {
+                constructor() {
+                    this.n = 0.00001;
+                    //layer 0 weights [4x2]
+                    this.w0_rows = 4; //match # of input nodes
+                    this.w0_cols = 2; //match # of output nodes
+                    this.w0 = math.matrix(this.createMatrix(this.w0_rows, this.w0_cols, 0));
+                    /* good
+                    [-0.016993222274735945, -0.004831965165095881]
+                    [-0.0008052223759151296, 0.01801665419757847]
+                    [0.021059784536553605, 0.0034314376247393356]
+                    [-0.0030504043865746816, -0.013261389568639925]
+
+                    [-0.09224602216902912, -0.003236814938129098]
+                    [0.002626031111713073, 0.22768465250876438]
+                    [0.09208293738203785, 0.0018819816452793155]
+                    [0.00010643978752295223, -0.2255071363765062]
+                    */
+                    this.bias = [0,0];
+                    // [0.000037607189007856134, 0.000017955661817]
+                    this.loss = 0;
+                    this.action = [0,0];
+                }
+
+                createMatrix(rows, cols, value) {
+                    let matrix = [];
+                    let pointer = 0;
+                    for (let i = 0; i < rows; i++) {
+                        let row = [];
+                        for (let j = 0; j < cols; j++) {
+                            if (Array.isArray(value)) {
+                                row.push(value[pointer]);
+                                pointer++;
+                            } else {
+                                row.push(value);
+                            }
+                        }
+                        matrix.push(row);
+                    }
+                    return matrix;
+                }
+
+                sumArray(array) {
+                    return array.reduce((accumulator, currentValue) => accumulator + currentValue, 0);
+                }
+
+
+                outer_product(tensor1, tensor2) {
+                    var product = []; 
+                    for (let i = 0; i < tensor1.length; i++) {
+                        let row = [0,0];
+                        for (let j = 0; j < tensor2.length; j++) {
+                            row[j] = tensor1[i] * tensor2[j];
+                        }
+                        product.push(row);
+                    }
+
+                    return product;
+                }
+
+                sigmoid(z) { //activation function
+                    return z.map(value => 1/(1 + Math.exp(-value))); 
+                }
+                sig_deriv(z) {
+                    return math.dotMultiply(z, math.subtract(1, z));
+                }
+
+                /**
+                 * Recieve input, calculate loss, adjust weights
+                 * @param {Array} input 1x4 vector [x, y, food_x, food_y] 
+                */
+                train(input) {
+                    var input_vect = math.matrix(input);
+                    var weighted_sum = math.multiply(input_vect, this.w0);
+                    var z = math.add(weighted_sum, this.bias); //2x1 vector
+
+                    var yHat = this.sigmoid(z);
+                    var yTrue = math.matrix([(input[0]-input[2]<0)*1, (input[1]-input[3]>0)*1]);
+                    var inner_loss_term = (input[0]-input[2]) ** 2 + (input[1]-input[3]) ** 2;
+                    this.loss = Math.sqrt(inner_loss_term); //scalar
+
+                    //dist = ((x1-x2)^2 + (y1-y2)^2)^(1/2)
+                    //dist dx = 1/2((x1-x2)^2 + (y1-y2)^2)^(-1/2)
+                    var loss_deriv = math.subtract(yHat, yTrue); //1 / (2*this.loss); //scalar
+                    var sig_deriv = this.sig_deriv(yHat); //2x1 vector
+                    var dLdS = math.dotMultiply(loss_deriv, sig_deriv); //2x1 vector
+                    //calculate gradient of loss W.R.T each weight
+                    var partialL_w0 = this.outer_product(input, dLdS.toArray());
+                    var dBias = math.dotMultiply(this.n, dLdS); 
+
+                    //update weights
+                    this.w0 = math.subtract(this.w0, math.dotMultiply(this.n, partialL_w0));
+                    this.bias = math.subtract(this.bias, dBias);
+                }
+
+                getAction(input) {
+                    var input_vect = math.matrix(input);
+                    var weighted_sum = math.multiply(input_vect, this.w0);
+                    var z = math.add(weighted_sum, this.bias);
+                    var yHat = this.sigmoid(z);
+
+                    return yHat.toArray();
+                }
+
+                getWeights() {
+                    return this.w0.toArray();
+                }
+            }
+
+
+            var canvas = document.getElementById("canv");
+            var ctx = canvas.getContext("2d");
+            
+            //circle vars
+            var x = canvas.width/2; 
+            var y = canvas.height/2; 
+            var radius = 25;
+            //move speed
+            var dx = 4;
+            var dy = 4;
+            var speed = 20;
+
+            //player vars 
+            var showPlayer = 0;
+            var px = canvas.width/2 - (canvas.width/2 * 0.4);
+            var py = canvas.height/2 - (canvas.height/2 * 0.4);
+            var pradius = 25;
+            var pdx = 4;
+            var pdy = 4;
+            var pspeed = 8;
+
+
+            //food vars
+            var food_width = 15;
+            var food_height = 20;
+            var food_x = canvas.width/2 - 20;
+            var food_y = canvas.height/2;
+            var food_dx = 8;
+            var food_dy = 8;
+
+            var score = 0;
+            var pscore = 0;
+
+            //Neural network instantiation
+            var net = new NN();
+            
+
+
+            function drawCircle() {
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, 2*Math.PI, true); //x,y (center point), radius, starting angle, ending angle (in radians), draw in clockwise
+                ctx.fillStyle = "#033a91";
+                ctx.lineWidth = 5;
+                ctx.strokeStyle = "#033a91";
+                ctx.fill();
+                ctx.stroke();
+            } 
+
+            function drawPlayer() {
+                ctx.beginPath();
+                ctx.arc(px, py, pradius, 0, 2*Math.PI, true); 
+                ctx.fillStyle = "#007317";
+                ctx.lineWidth = 5;
+                ctx.strokeStyle = "#007317";
+                ctx.fill();
+                ctx.stroke();
+            }
+
+            function drawFood() {
+                ctx.beginPath()
+                ctx.rect(food_x, food_y, food_width, food_height);
+                ctx.fillStyle = "#b6d94e";
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = "#b6d94e";
+                ctx.stroke();
+            }
+
+            function drawScore() {
+                ctx.font = "30px Arial";
+                ctx.fillStyle = "rgba(251, 248, 218, 0.37)";
+                ctx.fillText("score: " + score, canvas.width/2, 30);
+                ctx.fillText("score: " + pscore, canvas.width/2-150, 30);
+            }
+
+            function drawHyperparams(loss, action) {
+                ctx.font = "15px Arial";
+                ctx.fillStyle = "rgba(251, 248, 218, 0.37)";
+                ctx.fillText("(" + x + ", " + y + ")", 10, 20);
+                ctx.fillText("loss: " + loss, 10, 40);
+                let x_dir = "right";
+                let y_dir = "up";
+                if (action[0] < 0.5) {x_dir = "left";}
+                if (action[1] < 0.5) {y_dir = "down";}
+                ctx.fillText("moving (" + x_dir + ", " + y_dir + ")", 10, 60);
+            }
+
+            function drawNode(arc_params, radius, color) {
+                ctx.beginPath();
+                ctx.fillStyle = color;
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = "none";
+                ctx.arc(arc_params[0], arc_params[1], radius, 0, 2*Math.PI, true);
+                ctx.fill();
+                ctx.stroke();
+            }
+            function drawWeight(start_coord, end_coord, color) {
+                ctx.beginPath()
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = color;
+                ctx.moveTo(start_coord[0], start_coord[1]);
+                ctx.lineTo(end_coord[0], end_coord[1]);
+                ctx.stroke();
+            }
+            //function to normalize and scale weights
+            function normalizeAndScale(weights) {
+                //find the min and max weight values
+                let minWeight = Math.min(...weights.flat());
+                let maxWeight = Math.max(...weights.flat());
+
+                //normalize and scale weights to [0, 1]
+                return weights.map(row =>
+                    row.map(weight => {
+                        // Shift weights to be non-negative
+                        let normalized = weight - minWeight;
+                        let scaled = normalized / (maxWeight - minWeight);
+                        return scaled;
+                    })
+                );
+            }
+            function drawNetwork(input, weights, action) {
+                let input_radius = 12;
+                let input_x = canvas.width - input_radius*2 + 10;
+                let input_y = input_radius + 5;
+                let node_dist = input_radius*2 + 7;
+
+                //input node parameters
+                i_node1 = [input_x - node_dist*3, input_y];
+                i_node2 = [input_x - node_dist*2, input_y];
+                i_node3 = [input_x - node_dist, input_y];
+                i_node4 = [input_x, input_y];
+
+                //output node params
+                o_node1 = [input_x - node_dist*2, input_y + input_radius*2 + 15];
+                o_node2 = [input_x - node_dist, input_y + input_radius*2 + 15];
+
+                //weights
+                drawWeight(i_node1, o_node1, "rgba(217, 255, 251, " + weights[0][0] + ")");
+                drawWeight(i_node1, o_node2, "rgba(217, 255, 251, " + weights[0][1] + ")");
+                drawWeight(i_node2, o_node1, "rgba(217, 255, 251, " + weights[1][0] + ")");
+                drawWeight(i_node2, o_node2, "rgba(217, 255, 251, " + weights[1][1] + ")");
+                drawWeight(i_node3, o_node1, "rgba(217, 255, 251, " + weights[2][0] + ")");
+                drawWeight(i_node3, o_node2, "rgba(217, 255, 251, " + weights[2][1] + ")");
+                drawWeight(i_node4, o_node1, "rgba(217, 255, 251, " + weights[3][0] + ")");
+                drawWeight(i_node4, o_node2, "rgba(217, 255, 251, " + weights[3][1] + ")");
+
+                //input nodes
+                drawNode(i_node4, input_radius, "rgba(118, 252, 106, 0.3)"); //right-most input node
+                drawNode(i_node3, input_radius, "rgba(118, 252, 106, 0.3)"); 
+                drawNode(i_node2, input_radius, "rgba(118, 252, 106, 0.3)");
+                drawNode(i_node1, input_radius, "rgba(118, 252, 106, 0.3)"); //left-most input node 
+                
+                //output nodes
+                let x_output = action[0]+0.1;
+                let y_output = action[1]+0.1;
+                drawNode(o_node1, input_radius, "rgba(111, 252, 238, " + x_output +")");
+                drawNode(o_node2, input_radius, "rgba(111, 252, 238, " + y_output + ")"); 
+            }
+
+            function isColliding(object1_type, object2_type) { //check if Circle collides with food
+                switch (object1_type) {
+                    //case 0: player
+                    //case 1: AI
+                    case 0: object1_x = food_x;
+                            object1_y = food_y;
+                            object1_radius = pradius;
+                            break;
+                    case 1: object1_x = x;
+                            object1_y = y;
+                            object1_radius = radius;
+                            break;
+                    case 2: 
+                            object1_x = px;
+                            object1_y = py;
+                            object1_radius = pradius;
+                    default: break;
+                }
+                switch (object2_type) {
+                    //case 0: food
+                    //case 1: AI
+                    //case 2: player
+                    case 0:
+                            object2_x = food_x;
+                            object2_y = food_y;
+                            object2_radius = pradius;
+                            break;
+                    case 1: object2_x = x;
+                            object2_y = y
+                            object2_radius = radius;
+                            break;
+                    case 2: object2_x = px;
+                            object2_y = py;
+                            object2_radius = pradius;
+                            break;
+                    default: break;
+                }
+                //find closest point to the circle within the rectangle
+                const closestX = Math.max(object2_x, Math.min(object1_x, object2_x + object2_radius));
+                const closestY = Math.max(object2_y, Math.min(object1_y, object2_y + object2_radius));
+
+                //calculate distance between the circle's center and this closest point
+                const distanceX = object1_x - closestX;
+                const distanceY = object1_y - closestY;
+
+                // if the distance is less than the circle's radius, an intersection occurs
+                const distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY);
+                const collided = distance < object1_radius;
+                if (collided) {
+                    score += 1 ? object1_type==1 : 0;
+                    pscore += 1 ? object1_type==2 : 0;
+                }
+                return collided;
+            }
+
+            function redraw() {
+                //clear and redraw frame
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                drawScore();
+                drawFood();
+                drawCircle();
+                if (showPlayer) {
+                    drawPlayer();
+                
+                    document.addEventListener('keydown', function(event) {
+                        switch (event.keyCode) {
+                            case 87: pdy = -pspeed; break; // W
+                            case 83: pdy = pspeed; break;  // S
+                            case 65: pdx = -pspeed; break; // A
+                            case 68: pdx = pspeed; break;  // D
+                            default: break;
+                        }
+                    });
+                    document.addEventListener('keyup', function(event) {
+                        switch (event.keyCode) {
+                            case 87: pdy = 0; break; // W
+                            case 83: pdy = 0; break; // S
+                            case 65: pdx = 0; break; // A
+                            case 68: pdx = 0; break; // D
+                            default: break;
+                        }
+                    });
+                }
+
+                net.train([x, y, food_x, food_y]);
+                let action_vector = net.getAction([x, y, food_x, food_y]);
+                let weights = normalizeAndScale(net.getWeights());
+
+                var inner_loss_term = (x-food_x) ** 2 + (y-food_y) ** 2;
+                drawHyperparams(parseInt(Math.sqrt(inner_loss_term)), action_vector);
+                drawNetwork([x, y, food_x, food_y], weights, action_vector);
+                // >0.5 move right, <0.5 move left  
+                if (parseFloat(action_vector[0]) > 0.5) {dx = speed;}
+                else {dx = -speed;}
+                // >0.5 move up, <0.5 move down
+                if (parseFloat(action_vector[1]) > 0.5) {dy = -speed;}
+                else {dy = speed;}
+
+                px += pdx;
+                py += pdy;
+
+                x += dx; //adjust x-coord of circle
+                y += dy; //adjust y-coord of circle
+
+                food_x += food_dx;
+                food_y += food_dy;
+                
+                //check collision on canvas bounds
+                if (x + radius > canvas.width || x - radius < 0) {dx = 0;}
+                if (y + radius > canvas.height || y - radius < 0) {dy = 0;}
+                if (food_x + food_width > canvas.width || food_x - food_width < 0) {food_dx = -food_dx;}
+                if (food_y + food_height > canvas.height || food_y - food_height < 0) {food_dy = -food_dy;}
+                if (px + pradius > canvas.width || px - pradius < 0) {pdx = 0;}
+                if (py + pradius > canvas.height || py - pradius < 0) {pdy = 0;}
+                
+                //check if circle hit food
+                if (isColliding(1,0) || isColliding(2,0)) {
+                    food_x = Math.random() * (canvas.width-food_width - food_width) + food_width;
+                    food_y = Math.random() * (canvas.height-food_height - food_height) + food_height;
+                }
+                // if (isColliding(1,2)) {
+                //     score = 0;
+
+                // }
+                window.requestAnimationFrame(redraw);
+            }
+            window.requestAnimationFrame(redraw);
+
+
+        </script>
+    </body>
+</html>
