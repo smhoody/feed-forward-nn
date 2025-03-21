@@ -35,6 +35,7 @@ No installation is required. Simply open index.html in a web browser or go to ht
 - Open index.html in a browser.
 - The AI-controlled agent (blue) will attempt to reach the food (yellow) using its learned behavior.
 - The player-controlled agent (optional) can be moved with WASD keys for comparison.
+    - Player is disabled by default. To show the player, open the web console (F12) and type: showPlayer=1
 
 
 ## Customization
